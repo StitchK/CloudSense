@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Temporary CloudSense API Gateway to Lambda to SQS test stack.
+
+Resources:
+  ReadingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "cloudsense-http-ingest-test-${AWS::AccountId}"
+      VisibilityTimeout: 30
+
+  ReadingsHttpApi:
+    Type: AWS::Serverless::HttpApi
+
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloudsense-http-ingest-test
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Role: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/LabRole"
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          READING_QUEUE_URL: !Ref ReadingQueue
+      Events:
+        PostReading:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ReadingsHttpApi
+            Path: /readings
+            Method: POST
+      InlineCode: |
+        import json
+        import os
+        from datetime import datetime, timezone
+
+        import boto3
+
+        sqs = boto3.client("sqs")
+        queue_url = os.environ["READING_QUEUE_URL"]
+        required_fields = {
+            "device_id",
+            "reading_id",
+            "timestamp",
+            "heart_rate_bpm",
+            "body_temperature_c",
+            "spo2_pct",
+            "blood_pressure",
+            "activity",
+        }
+
+        def api_response(status_code, body):
+            return {
+                "statusCode": status_code,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps(body),
+            }
+
+        def lambda_handler(event, context):
+            try:
+                body = event.get("body", "")
+                reading = json.loads(body) if isinstance(body, str) else body
+            except (TypeError, ValueError) as exc:
+                return api_response(
+                    400,
+                    {"message": "invalid JSON", "error": str(exc)},
+                )
+
+            if not isinstance(reading, dict):
+                return api_response(
+                    400,
+                    {"message": "reading must be a JSON object"},
+                )
+
+            missing = sorted(required_fields.difference(reading))
+            if missing:
+                return api_response(
+                    400,
+                    {"message": "missing required fields", "fields": missing},
+                )
+
+            enriched = dict(reading)
+            enriched["received_at"] = datetime.now(timezone.utc).isoformat()
+            enriched["source"] = "api-gateway"
+
+            print(
+                json.dumps(
+                    {
+                        "event": "reading_received",
+                        "device_id": reading.get("device_id"),
+                        "reading_id": reading.get("reading_id"),
+                        "payload": enriched,
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            )
+
+            try:
+                sqs.send_message(
+                    QueueUrl=queue_url,
+                    MessageBody=json.dumps(enriched, separators=(",", ":")),
+                )
+            except Exception as exc:
+                print(
+                    json.dumps(
+                        {"event": "sqs_send_failed", "error": str(exc)}
+                    )
+                )
+                return api_response(
+                    502,
+                    {"message": "failed to enqueue reading"},
+                )
+
+            return api_response(
+                202,
+                {
+                    "message": "accepted",
+                    "reading_id": reading.get("reading_id"),
+                },
+            )
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint used by the simulator.
+    Value: !Sub "https://${ReadingsHttpApi}.execute-api.${AWS::Region}.amazonaws.com/readings"
+
+  QueueUrl:
+    Description: SQS queue receiving accepted readings.
+    Value: !Ref ReadingQueue

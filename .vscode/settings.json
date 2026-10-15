@@ -1,0 +1,8 @@
+{
+  "python.defaultInterpreterPath": "/Users/zeo/anaconda3/envs/aiba/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "python.terminal.activateEnvInCurrentTerminal": true,
+  "code-runner.executorMap": {
+    "python": "\"$pythonPath\" -u $fullFileName"
+  }
+}

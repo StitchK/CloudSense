@@ -1,0 +1,43 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Minimal CloudSense HTTP ingestion test stack.
+
+Resources:
+  ReadingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "cloudsense-http-test-${AWS::AccountId}"
+      VisibilityTimeout: 30
+
+  ReadingsHttpApi:
+    Type: AWS::Serverless::HttpApi
+
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloudsense-http-test-ingest
+      CodeUri: src/
+      Handler: ingest.app.lambda_handler
+      Runtime: python3.13
+      MemorySize: 128
+      Timeout: 10
+      Role: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/LabRole"
+      Environment:
+        Variables:
+          READING_QUEUE_URL: !Ref ReadingQueue
+      Events:
+        PostReading:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ReadingsHttpApi
+            Path: /readings
+            Method: POST
+
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint for the simulator.
+    Value: !Sub "https://${ReadingsHttpApi}.execute-api.${AWS::Region}.amazonaws.com/readings"
+
+  QueueUrl:
+    Description: URL of the test reading queue.
+    Value: !Ref ReadingQueue
