@@ -20,3 +20,4 @@ samconfig.local.toml
 .vscode/
 
 output/
+dist/

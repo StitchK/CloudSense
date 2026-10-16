@@ -1,12 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Minimal CloudSense HTTP ingestion test stack.
+Description: CloudSense API Gateway and Ingest Lambda stack.
 
 Resources:
   ReadingQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: !Sub "cloudsense-http-test-${AWS::AccountId}"
+      QueueName: !Sub "cloudsense-http-ingest-test-${AWS::AccountId}"
       VisibilityTimeout: 30
 
   ReadingsHttpApi:
@@ -15,7 +15,7 @@ Resources:
   IngestFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: cloudsense-http-test-ingest
+      FunctionName: cloudsense-http-ingest-test
       CodeUri: src/
       Handler: ingest.app.lambda_handler
       Runtime: python3.13
