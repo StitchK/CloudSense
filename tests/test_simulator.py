@@ -36,8 +36,10 @@ def has_critical_metric(reading):
             reading["body_temperature_c"] < 35.0
             or reading["body_temperature_c"] >= 38.0,
             reading["spo2_pct"] < 92,
-            blood_pressure["systolic"] > 180,
-            blood_pressure["diastolic"] > 120,
+            blood_pressure["systolic"] < 80
+            or blood_pressure["systolic"] > 180,
+            blood_pressure["diastolic"] < 50
+            or blood_pressure["diastolic"] > 120,
         )
     )
 
@@ -51,8 +53,10 @@ def has_warning_metric(reading):
             35.0 <= reading["body_temperature_c"] <= 36.0
             or 37.5 <= reading["body_temperature_c"] < 38.0,
             92 <= reading["spo2_pct"] <= 94,
-            131 <= blood_pressure["systolic"] <= 180,
-            86 <= blood_pressure["diastolic"] <= 120,
+            80 <= blood_pressure["systolic"] <= 89
+            or 131 <= blood_pressure["systolic"] <= 180,
+            50 <= blood_pressure["diastolic"] <= 59
+            or 86 <= blood_pressure["diastolic"] <= 120,
         )
     )
 
@@ -220,7 +224,9 @@ class ReadingSimulatorTests(unittest.TestCase):
                     ),
                     "spo2": reading["spo2_pct"] < 92,
                     "blood_pressure": (
-                        blood_pressure["systolic"] > 180
+                        blood_pressure["systolic"] < 80
+                        or blood_pressure["systolic"] > 180
+                        or blood_pressure["diastolic"] < 50
                         or blood_pressure["diastolic"] > 120
                     ),
                 }

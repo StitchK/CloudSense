@@ -44,16 +44,16 @@ WARNING_RANGES = {
     "heart_rate_bpm": ((45, 59), (101, 120)),
     "body_temperature_c": ((35.0, 36.0), (37.5, 37.9)),
     "spo2_pct": ((92, 94),),
-    "systolic": ((131, 180),),
-    "diastolic": ((86, 119),),
+    "systolic": ((80, 89), (131, 180)),
+    "diastolic": ((50, 59), (86, 119)),
 }
 
 CRITICAL_RANGES = {
     "heart_rate_bpm": ((35, 44), (121, 160)),
     "body_temperature_c": ((34.0, 34.9), (38.0, 39.5)),
     "spo2_pct": ((85, 91),),
-    "systolic": ((181, 220),),
-    "diastolic": ((121, 150),),
+    "systolic": ((50, 79), (181, 220)),
+    "diastolic": ((30, 49), (121, 150)),
 }
 
 # 禁止设备名字以-或_开头
@@ -321,13 +321,14 @@ class ReadingSimulator:
         elif metric == "spo2_pct":
             values[metric] = self._random.randint(*WARNING_RANGES[metric][0])
         elif metric == "systolic":
-            values[metric] = self._random.randint(*WARNING_RANGES[metric][0])
+            values[metric] = self._choose_warning_value(metric)
+            lower_diastolic = 50 if values[metric] < 90 else 60
             values["diastolic"] = self._random.randint(
-                NORMAL_RANGES["diastolic"][0],
+                lower_diastolic,
                 min(NORMAL_RANGES["diastolic"][1], values[metric] - 1),
             )
         else:
-            values[metric] = self._random.randint(*WARNING_RANGES[metric][0])
+            values[metric] = self._choose_warning_value(metric)
             values["systolic"] = self._random.randint(
                 max(NORMAL_RANGES["systolic"][0], values[metric] + 1),
                 NORMAL_RANGES["systolic"][1],
@@ -351,17 +352,29 @@ class ReadingSimulator:
         elif metric == "spo2_pct":
             values[metric] = self._random.randint(*CRITICAL_RANGES[metric][0])
         elif metric == "systolic":
-            values[metric] = self._random.randint(*CRITICAL_RANGES[metric][0])
+            values[metric] = self._choose_critical_value(metric)
+            lower_diastolic = 30 if values[metric] < 80 else 60
+            upper_diastolic = (
+                min(49, values[metric] - 1)
+                if values[metric] < 80
+                else min(NORMAL_RANGES["diastolic"][1], values[metric] - 1)
+            )
             values["diastolic"] = self._random.randint(
-                NORMAL_RANGES["diastolic"][0],
-                min(NORMAL_RANGES["diastolic"][1], values[metric] - 1),
+                lower_diastolic,
+                upper_diastolic,
             )
         else:
-            values[metric] = self._random.randint(*CRITICAL_RANGES[metric][0])
-            values["systolic"] = self._random.randint(
-                max(150, values[metric] + 1),
-                min(180, 220),
-            )
+            values[metric] = self._choose_critical_value(metric)
+            if values[metric] < 50:
+                values["systolic"] = self._random.randint(
+                    NORMAL_RANGES["systolic"][0],
+                    NORMAL_RANGES["systolic"][1],
+                )
+            else:
+                values["systolic"] = self._random.randint(
+                    max(150, values[metric] + 1),
+                    180,
+                )
 
     # 选择指标
     def _select_metric(self, metric: Optional[str]) -> str:

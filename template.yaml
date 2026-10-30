@@ -1,13 +1,74 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: CloudSense API Gateway and Ingest Lambda stack.
+Description: CloudSense ingestion, processing, storage, and alert stack.
+
+Parameters:
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Optional email address subscribed to CloudSense alerts.
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
 
 Resources:
+  ReadingDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+
   ReadingQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "cloudsense-http-ingest-test-${AWS::AccountId}"
-      VisibilityTimeout: 30
+      VisibilityTimeout: 360
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ReadingDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  AlertStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: DeviceTimeIndex
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: CloudSense health alerts
+
+  AlertEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref AlertsTopic
+      Endpoint: !Ref AlertEmail
 
   ReadingsHttpApi:
     Type: AWS::Serverless::HttpApi
@@ -33,6 +94,33 @@ Resources:
             Path: /readings
             Method: POST
 
+  ProcessFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloudsense-process-alerts
+      CodeUri: src/
+      Handler: process.app.lambda_handler
+      Runtime: python3.13
+      MemorySize: 256
+      Timeout: 60
+      Role: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/LabRole"
+      Environment:
+        Variables:
+          ALERT_STATE_TABLE: !Ref AlertStateTable
+          ALERTS_TOPIC_ARN: !Ref AlertsTopic
+          ALERT_COOLDOWN_SECONDS: 300
+          CLAIM_LEASE_SECONDS: 120
+          MAX_READING_AGE_SECONDS: 300
+          READING_HISTORY_RETENTION_SECONDS: 7776000
+      Events:
+        ProcessReadings:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ReadingQueue.Arn
+            BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
 Outputs:
   ApiEndpoint:
     Description: API Gateway endpoint for the simulator.
@@ -41,3 +129,15 @@ Outputs:
   QueueUrl:
     Description: URL of the test reading queue.
     Value: !Ref ReadingQueue
+
+  DeadLetterQueueUrl:
+    Description: URL for readings that repeatedly fail processing.
+    Value: !Ref ReadingDeadLetterQueue
+
+  AlertTopicArn:
+    Description: SNS topic ARN used for alerts.
+    Value: !Ref AlertsTopic
+
+  AlertStateTableName:
+    Description: DynamoDB table used for readings, deduplication, and alert state.
+    Value: !Ref AlertStateTable
