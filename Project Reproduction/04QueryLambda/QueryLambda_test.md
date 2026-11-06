@@ -34,7 +34,7 @@ ruff check src tests simulator scripts/package_query.py
 python3 scripts/package_query.py
 ```
 
-本机测试解释器实际使用 `/Users/zeo/anaconda3/bin/python`，系统 Python 缺少 pytest。
+本机测试使用已安装 pytest 的 Anaconda Python；系统 Python 缺少 pytest。
 Ruff 与 `git diff --check` 通过。没有本地 SAM CLI，因此未宣称本地 `sam validate` 通过；
 实际 CloudFormation 变更集完成 SAM 转换且 Stack 达到 `UPDATE_COMPLETE`。
 
@@ -163,9 +163,10 @@ python3 inspect_deployment.py upstream
 
 ## 8. 截图说明
 
-截图来自本次真实 AWS CloudShell 命令及响应；没有重绘测试输出。
-截图保留 CloudShell 页名、区域和命令上下文，裁去顶部账号栏。
+截图来自本次真实 AWS CloudShell 命令及响应；测试结果未重绘。
+截图保留 CloudShell 页名、区域和命令上下文，裁去顶部账号栏；实际 API 地址已用明确的脱敏标记遮盖。
 本目录包含模拟数据及实验环境信息，未保存 AWS 凭证。
+数据库比对脚本的汇总报告现使用 `<QueryApiBaseUrl>` 占位符，不再打印实际基础地址，方便安全截图。
 
 ## 9. 不打开 CloudShell 的本机测试
 

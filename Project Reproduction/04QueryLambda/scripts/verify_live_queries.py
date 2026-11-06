@@ -79,5 +79,5 @@ assert http("/devices/query-nonexistent-20261106/history")[1]["items"]==[]
 s,_,headers=http(prefix+"/latest",method="OPTIONS",headers={"Origin":"http://localhost:5173","Access-Control-Request-Method":"GET"})
 assert s==204,(s,headers)
 assert {k.lower():v for k,v in headers.items()}["access-control-allow-origin"]=="http://localhost:5173"
-report={"result":"PASS","stored_readings_compared":len(rows),"devices":len(groups),"checks":checks,"invalid_parameters":"PASS","missing_device":"PASS","cors_preflight":"PASS","base_url":base}
+report={"result":"PASS","stored_readings_compared":len(rows),"devices":len(groups),"checks":checks,"invalid_parameters":"PASS","missing_device":"PASS","cors_preflight":"PASS","base_url":"<QueryApiBaseUrl>"}
 print("LIVE_QUERY_REPORT",json.dumps(report))

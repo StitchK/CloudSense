@@ -37,6 +37,149 @@ Lambda 名称为 `cloudsense-query-readings`，Python 3.13，128 MB，超时 10 
 | `GET /devices/{device_id}/history` | 按设备和测量时间查询历史数据，从新到旧 |
 | `GET /devices/{device_id}/alerts` | 查询有 Warning 或 Critical 指标的历史读数 |
 
+## 重点实现代码与实现步骤
+
+下面代码摘自 `src/query/app.py`，省略的上下文已注明。没有写入真实 API 地址、账号、邮箱或凭证。
+表名从 Lambda 环境变量读取，API 地址由部署输出取得，无需硬编码到 Lambda3 中。
+
+### 1. 连接已有数据库并选择查询路由
+
+```python
+ROUTES = {
+    "GET /devices/{device_id}/latest": "latest",
+    "GET /devices/{device_id}/history": "history",
+    "GET /devices/{device_id}/alerts": "alerts",
+}
+
+def get_table():
+    import boto3
+    return boto3.resource("dynamodb").Table(os.environ["ALERT_STATE_TABLE"])
+```
+
+API Gateway 将 HTTP API v2 事件交给 Handler，Handler 根据 `routeKey` 选择功能。
+`pathParameters.device_id` 用于限定设备，先校验设备格式及参数，再访问数据库。
+Lambda 使用执行角色获取权限，代码不保存 Access Key 或 Secret Key。
+
+### 2. 按设备和测量时间查询，过滤已过期记录
+
+```python
+def _query_args(device_id, now):
+    return {
+        "IndexName": "DeviceTimeIndex",
+        "KeyConditionExpression": "GSI1PK = :device",
+        "FilterExpression": "attribute_not_exists(expires_at) OR expires_at > :now",
+        "ExpressionAttributeValues": {
+            ":device": f"DEVICE#{device_id}", ":now": now
+        },
+        "ScanIndexForward": False,
+    }
+```
+
+Lambda2 已保存 `GSI1PK=DEVICE#设备ID` 和按测量时间排序的 `GSI1SK`，因此可以直接用索引 Query。
+倒序查询让最新测量排在前面。TTL 删除是异步的，额外过滤 `expires_at` 可避免返回尚未物理删除的过期数据。
+GSI 查询为最终一致，刚写入的记录可能稍后出现。
+
+### 3. 生成整体等级，并保留异常参数及邮件处理状态
+
+以下摘自 `_public_reading`：
+
+```python
+LEVEL_RANK = {"normal": 0, "warning": 1, "critical": 2}
+
+evaluations = item.get("evaluations", [])
+history = item.get("alert_history", {})
+alerts = [
+    {
+        **result,
+        "notification_status": history.get(result["metric"], {}).get("status"),
+    }
+    for result in evaluations
+    if result["level"] in ("warning", "critical")
+]
+overall_status = max(
+    (result["level"] for result in evaluations),
+    key=lambda level: LEVEL_RANK.get(level, -1),
+    default="unknown",
+)
+```
+
+Lambda3 读取 Lambda2 已保存的分类，不重复计算医学阈值。
+整体等级取最高值；`alerts` 保留异常项的 `metric`、`level`、`message`。
+邮件状态独立放在 `notification_status`：例如 Critical 尚待连续确认时，身体指标依然为 Critical。
+网页据此显示异常参数和 Warning/Critical 弹窗。
+
+### 4. 返回最新测量，并判断数据是否停止更新
+
+以下摘自 `_latest`，位于查询返回非空页的分支：
+
+```python
+item = page["Items"][0]
+age = max(0, now - int(item["measured_at_epoch"]))
+return {
+    "device_id": device_id,
+    "data": _public_reading(item),
+    "age_seconds": age,
+    "is_stale": age > int(os.getenv("DATA_STALE_SECONDS", "300")),
+}
+```
+
+最新不等于实时：最新一条也可能是旧数据，所以默认超过 300 秒就返回 `is_stale=true`。
+完整实现还处理 TTL 过滤后的空页，最多查询 5 页；无有效数据返回 404，超过页数预算返回 503。
+
+### 5. 历史时间范围、异常筛选与分页
+
+以下摘自 `_list_readings`，`start/end` 已完成 ISO 时间解析，`limit` 已校验为 1–100：
+
+```python
+args = _query_args(device_id, now)
+args["KeyConditionExpression"] += " AND GSI1SK BETWEEN :start AND :end"
+args["ExpressionAttributeValues"].update({
+    ":start": f"{start:020d}#",
+    ":end": f"{end + 1:020d}#",
+})
+args["Limit"] = limit
+if key:
+    args["ExclusiveStartKey"] = key
+page = table_factory().query(**args)
+items = [_public_reading(item) for item in page.get("Items", [])]
+if view == "alerts":
+    items = [item for item in items if item["alerts"]]
+next_key = page.get("LastEvaluatedKey")
+```
+
+20 位补零 epoch 保证字符串顺序与时间顺序一致，终点使用下一秒前缀以包含结束秒的全部 reading ID。
+`LastEvaluatedKey` 被编码为 `next_token`；下一次解码后作为 `ExclusiveStartKey`。
+游标包含设备、接口和时间窗口，完整实现会验证其与本次请求一致；Base64 编码不等于加密或访问授权。
+异常筛选在每页读取后进行，因此异常页可能为空但仍有游标，前端要继续翻页。
+
+### 6. 将 DynamoDB 数值转换为 JSON，并统一响应
+
+```python
+def _json_number(value):
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    raise TypeError(f"Unsupported JSON type: {type(value).__name__}")
+
+def _response(status, body, request_id):
+    return {
+        "statusCode": status,
+        "headers": {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+            "x-request-id": request_id,
+        },
+        "body": json.dumps(body, default=_json_number, separators=(",", ":")),
+    }
+```
+
+数据库的 Decimal 转为 JSON 数字，网页可直接用于数值卡片与图表。
+Handler 将参数错误转换为 400、未知路由或无最新数据转换为 404、数据库等服务故障转换为 503；
+服务故障的响应使用统一说明，避免把内部异常堆栈返回给前端。
+
+实现顺序为：确认 Lambda2 存储结构 → 实现上述查询与转换 → 添加 Handler 和参数检查 →
+配置 SAM 中的 QueryFunction 与 GET 路由 → 运行单元测试 → 增量部署 → 实际 HTTP 与数据库比对。
+具体部署和测试记录见后文及 `QueryLambda_test.md`。
+
 使用现有 `DeviceTimeIndex` 索引：
 
 ```text
@@ -186,6 +329,12 @@ ZIP 上传到现有 SAM 部署制品桶，创建并审查变更集 `add-dashboar
 后续恢复 Lambda2 消费后，应重新执行新数据验证；旧样本可能因时间已久而正确显示 stale，实时性应以新的时间戳验证。
 
 ## 使用边界
+
+### 文档脱敏
+
+接口示例使用 `<QueryApiBaseUrl>` 或 `<api-id>` 占位符；不要在提交前替换为个人实验地址。
+截图已裁去账号栏，并遮盖曾出现的实际查询 API 地址；遮盖区域明确标注为脱敏，测试状态保留。
+文档中的设备名称和测量值是项目模拟数据。部署脚本从当前 AWS 会话读取资源信息，不包含访问凭证。
 
 目前查询 API 和现有采集 API 一样，没有登录授权器；仅用于本项目的模拟数据实验。
 CORS 不是访问鉴权。后续若接入真实私人健康数据，需要加入登录及设备归属校验。
