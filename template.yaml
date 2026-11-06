@@ -1,12 +1,16 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: CloudSense ingestion, processing, storage, and alert stack.
+Description: CloudSense ingestion, processing, storage, alerts, and dashboard query stack.
 
 Parameters:
   AlertEmail:
     Type: String
     Default: ""
     Description: Optional email address subscribed to CloudSense alerts.
+  DashboardAllowedOrigins:
+    Type: CommaDelimitedList
+    Default: "http://localhost:5173"
+    Description: Browser origins allowed to call the API (scheme, host, and port).
 
 Conditions:
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
@@ -72,6 +76,13 @@ Resources:
 
   ReadingsHttpApi:
     Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: !Ref DashboardAllowedOrigins
+        AllowMethods: [GET, POST, OPTIONS]
+        AllowHeaders: [Content-Type, Authorization]
+        ExposeHeaders: [x-request-id]
+        MaxAge: 300
 
   IngestFunction:
     Type: AWS::Serverless::Function
@@ -121,7 +132,52 @@ Resources:
             FunctionResponseTypes:
               - ReportBatchItemFailures
 
+  QueryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: cloudsense-query-readings
+      CodeUri: src/
+      Handler: query.app.lambda_handler
+      Runtime: python3.13
+      MemorySize: 128
+      Timeout: 10
+      Role: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/LabRole"
+      Environment:
+        Variables:
+          ALERT_STATE_TABLE: !Ref AlertStateTable
+          DATA_STALE_SECONDS: 300
+      Events:
+        GetLatestReading:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ReadingsHttpApi
+            Path: /devices/{device_id}/latest
+            Method: GET
+            PayloadFormatVersion: "2.0"
+        GetReadingHistory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ReadingsHttpApi
+            Path: /devices/{device_id}/history
+            Method: GET
+            PayloadFormatVersion: "2.0"
+        GetAlertHistory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref ReadingsHttpApi
+            Path: /devices/{device_id}/alerts
+            Method: GET
+            PayloadFormatVersion: "2.0"
+
 Outputs:
+  QueryApiBaseUrl:
+    Description: Append /devices/{device_id}/latest, /history, or /alerts.
+    Value: !Sub "https://${ReadingsHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+
+  QueryFunctionName:
+    Description: Lambda serving dashboard queries.
+    Value: !Ref QueryFunction
+
   ApiEndpoint:
     Description: API Gateway endpoint for the simulator.
     Value: !Sub "https://${ReadingsHttpApi}.execute-api.${AWS::Region}.amazonaws.com/readings"

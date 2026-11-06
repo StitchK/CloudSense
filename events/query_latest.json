@@ -1,0 +1,10 @@
+{
+  "version": "2.0",
+  "routeKey": "GET /devices/{device_id}/latest",
+  "requestContext": {
+    "requestId": "query-latest-test",
+    "http": {"method": "GET"}
+  },
+  "pathParameters": {"device_id": "dev-001"},
+  "queryStringParameters": null
+}

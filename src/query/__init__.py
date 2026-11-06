@@ -1,0 +1,1 @@
+"""Dashboard query Lambda package."""
