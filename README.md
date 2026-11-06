@@ -17,6 +17,7 @@ src/common/     Validation, alert rules, idempotency, and DynamoDB helpers
 src/ingest/     API Gateway ingestion Lambda
 src/process/    SQS processing Lambda
 src/query/      Dashboard query Lambda (Lambda3)
+frontend/       React + Vite monitoring dashboard
 simulator/      Local synthetic-data producer
 tests/          Unit tests
 events/         Lambda test events

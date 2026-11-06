@@ -12,8 +12,12 @@ env/
 .aws/
 .env
 .env.*
+!.env.example
+!**/.env.example
 simulator/simulator.local.json
 *.pem
+
+node_modules/
 
 .aws-sam/
 samconfig.local.toml
