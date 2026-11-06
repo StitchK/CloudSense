@@ -64,8 +64,7 @@ Interactive commands include `n`, `w`, `c`, `ch`, `ct`, `co`, `cb`, `d`, and `q`
 Send one complete demo sequence:
 
 ```bash
-python3 simulator/Simulator_send.py \
-  --api-url "<API_ENDPOINT>"
+python3 simulator/simulator_send.py
 ```
 
 The sequence is three normal readings, one warning, then two consecutive
@@ -74,8 +73,7 @@ critical readings from the same device.
 Run the continuous random sender:
 
 ```bash
-python3 simulator/Simulator_send_random.py \
-  --api-url "<API_ENDPOINT>"
+python3 simulator/simulator_send_random.py
 ```
 
 The random sender alternates between these cycles:
@@ -87,6 +85,22 @@ critical -> critical -> normal -> normal -> normal
 
 Use `Ctrl+C` to stop it. Both send scripts also support `--dry-run` for local
 inspection without sending data.
+
+Both scripts automatically read `simulator/simulator.local.json`, relative to
+their own location, so VS Code Run Code also works regardless of its working
+directory. On a new checkout, copy `simulator/simulator.local.example.json` to
+`simulator/simulator.local.json` and replace `api_base_url` with your API Gateway
+base URL. `/readings` is appended automatically. The real local configuration
+is ignored by Git; never put your personal URL in the example file.
+`--api-url` overrides `CLOUDSENSE_API_URL`, which overrides the local file.
+An explicit argument or environment variable should contain the full POST URL
+including `/readings`.
+
+From inside the `simulator/` directory you can simply run
+`python3 simulator_send.py` or `python3 simulator_send_random.py`.
+The first sends six readings and exits; the second runs until Ctrl+C.
+HTTP 202 confirms ingestion accepted a reading; downstream storage and email
+still depend on the Lambda2 SQS trigger being enabled.
 
 ## Run Tests
 

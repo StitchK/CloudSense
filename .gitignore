@@ -12,6 +12,7 @@ env/
 .aws/
 .env
 .env.*
+simulator/simulator.local.json
 *.pem
 
 .aws-sam/

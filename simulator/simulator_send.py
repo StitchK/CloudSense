@@ -13,8 +13,10 @@ from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 try:
+    from .send_config import resolve_api_url
     from .simulator import ReadingSimulator, send_reading, validate_reading
 except ImportError:
+    from send_config import resolve_api_url
     from simulator import ReadingSimulator, send_reading, validate_reading
 
 
@@ -53,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-url",
         default=os.getenv("CLOUDSENSE_API_URL"),
-        help="API Gateway POST endpoint, including /readings.",
+        help="Override the environment or private local config; include /readings.",
     )
     parser.add_argument(
         "--api-key",
@@ -241,11 +243,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 0
 
-    if not args.api_url:
-        print(
-            "error: provide --api-url or set CLOUDSENSE_API_URL",
-            file=sys.stderr,
-        )
+    try:
+        args.api_url = resolve_api_url(args.api_url)
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
         return 2
 
     return send_demo(
