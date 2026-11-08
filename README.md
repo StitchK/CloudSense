@@ -69,7 +69,7 @@ python3 simulator/simulator_send.py
 ```
 
 The sequence is three normal readings, one warning, then two consecutive
-critical readings from the same device.
+critical readings, all from `device-001`, matching the dashboard default.
 
 Run the continuous random sender:
 
@@ -86,6 +86,15 @@ critical -> critical -> normal -> normal -> normal
 
 Use `Ctrl+C` to stop it. Both send scripts also support `--dry-run` for local
 inspection without sending data.
+
+Both senders keep using `device-001` across runs and cycles. To demonstrate
+another device, pass `--device-id other-device-002` and select the same ID in
+the dashboard. This replaces the old `--device-prefix` option.
+Each actual send gets the current measurement time and a new reading ID.
+Messages are spaced at least one second apart, including between random cycles,
+because the backend orders readings by whole-second measurement timestamps.
+Run one sender at a time for the demonstration device. Existing alert cooldown
+state can suppress email notifications on repeated demonstrations.
 
 Both scripts automatically read `simulator/simulator.local.json`, relative to
 their own location, so VS Code Run Code also works regardless of its working

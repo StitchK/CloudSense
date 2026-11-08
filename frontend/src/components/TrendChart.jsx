@@ -45,7 +45,11 @@ function seriesForMetric(records, metricKey) {
         symbolSize: 7,
         lineStyle: { width: 2.5, color: config.color },
         itemStyle: { color: config.color },
-        data: records.map((record) => record.metrics?.blood_pressure?.value?.systolic),
+        data: records.map((record) => ({
+          value: record.metrics?.blood_pressure?.value?.systolic,
+          itemStyle: { color: statusColor(pointStatus(record, metricKey), config.color) },
+          symbolSize: ["warning", "critical"].includes(pointStatus(record, metricKey)) ? 11 : 7,
+        })),
       },
       {
         name: "舒张压",
@@ -55,7 +59,11 @@ function seriesForMetric(records, metricKey) {
         symbolSize: 7,
         lineStyle: { width: 2, type: "dashed", color: "#38bdf8" },
         itemStyle: { color: "#38bdf8" },
-        data: records.map((record) => record.metrics?.blood_pressure?.value?.diastolic),
+        data: records.map((record) => ({
+          value: record.metrics?.blood_pressure?.value?.diastolic,
+          itemStyle: { color: statusColor(pointStatus(record, metricKey), "#38bdf8") },
+          symbolSize: ["warning", "critical"].includes(pointStatus(record, metricKey)) ? 11 : 7,
+        })),
       },
     ];
   }
@@ -87,7 +95,7 @@ function seriesForMetric(records, metricKey) {
 }
 
 
-export default function TrendChart({ records, metricKey, loading }) {
+export default function TrendChart({ records, metricKey, loading, error }) {
   const chartElement = useRef(null);
   const config = METRICS[metricKey];
   const option = {
@@ -143,7 +151,7 @@ export default function TrendChart({ records, metricKey, loading }) {
   };
 
   useEffect(() => {
-    if (loading || !records.length || !chartElement.current) return undefined;
+    if (error || loading || !records.length || !chartElement.current) return undefined;
     const chart = echarts.init(chartElement.current, undefined, {
       renderer: "canvas",
     });
@@ -154,14 +162,16 @@ export default function TrendChart({ records, metricKey, loading }) {
       observer.disconnect();
       chart.dispose();
     };
-  }, [loading, metricKey, records]);
+  }, [error, loading, metricKey, records]);
+
+  if (error) return <div key="error" className="empty-state chart-empty"><strong>历史趋势暂时无法加载</strong><span>请重试或选择更短的时间范围。</span></div>;
 
   if (loading) {
-    return <div className="chart-skeleton" aria-label="历史趋势加载中" />;
+    return <div key="loading" className="chart-skeleton" aria-label="历史趋势加载中" />;
   }
   if (!records.length) {
     return (
-      <div className="empty-state chart-empty">
+      <div key="empty" className="empty-state chart-empty">
         <strong>暂无趋势数据</strong>
         <span>选择其他时间范围或确认设备已经上传数据。</span>
       </div>
@@ -170,6 +180,7 @@ export default function TrendChart({ records, metricKey, loading }) {
 
   return (
     <div
+      key="chart"
       ref={chartElement}
       className="trend-chart"
       aria-label={`${config.label}历史趋势图。最新值为 ${formatMetricValue(

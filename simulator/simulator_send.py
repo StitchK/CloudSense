@@ -8,15 +8,14 @@ import json
 import os
 import sys
 import time
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Sequence
 
 try:
-    from .send_config import resolve_api_url
+    from .send_config import prepare_reading_for_send, resolve_api_url
     from .simulator import ReadingSimulator, send_reading, validate_reading
 except ImportError:
-    from send_config import resolve_api_url
+    from send_config import prepare_reading_for_send, resolve_api_url
     from simulator import ReadingSimulator, send_reading, validate_reading
 
 
@@ -49,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Send 3 normal readings, 1 warning, and 2 consecutive critical "
-            "readings from the same critical-test device."
+            "readings from the dashboard demonstration device."
         )
     )
     parser.add_argument(
@@ -69,9 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Base random seed for reproducible generated values.",
     )
     parser.add_argument(
-        "--device-prefix",
-        default="manual-demo",
-        help="Prefix used for unique device IDs in this run.",
+        "--device-id",
+        default="device-001",
+        help="Device monitored by the dashboard (default: device-001).",
     )
     parser.add_argument(
         "--interval-seconds",
@@ -110,51 +109,45 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    return f"{timestamp}-{uuid.uuid4().hex[:4]}"
-
-
 def generate_demo_readings(
     seed: int,
-    device_prefix: str,
+    device_id: str,
     normal_interval_seconds: float,
     critical_interval_seconds: float,
 ) -> list[tuple[str, dict]]:
     """Generate the full demonstration sequence without sending it."""
-    run_id = _run_id()
-    normal_device = f"{device_prefix}-{run_id}-normal"
-    warning_device = f"{device_prefix}-{run_id}-warning"
-    critical_device = f"{device_prefix}-{run_id}-critical"
+    start_time = datetime.now(timezone.utc)
+    normal_interval_seconds = max(1.0, normal_interval_seconds)
+    critical_interval_seconds = max(1.0, critical_interval_seconds)
 
     normal_readings = ReadingSimulator(
         seed=seed,
-        start_time=datetime.now(timezone.utc),
+        start_time=start_time,
     ).generate_batch(
         count=NORMAL_COUNT,
         device_count=1,
         scenario="normal",
         interval_seconds=normal_interval_seconds,
-        device_id=normal_device,
+        device_id=device_id,
     )
     warning_reading = ReadingSimulator(
         seed=seed + 1,
-        start_time=datetime.now(timezone.utc),
+        start_time=start_time + timedelta(seconds=NORMAL_COUNT * normal_interval_seconds),
     ).generate_batch(
         count=1,
         scenario="warning",
         metric="blood_pressure",
-        device_id=warning_device,
+        device_id=device_id,
     )[0]
     critical_readings = ReadingSimulator(
         seed=seed + 2,
-        start_time=datetime.now(timezone.utc),
+        start_time=start_time + timedelta(seconds=(NORMAL_COUNT + 1) * normal_interval_seconds),
     ).generate_batch(
         count=CRITICAL_COUNT,
         scenario="critical",
         interval_seconds=critical_interval_seconds,
         metric="blood_pressure",
-        device_id=critical_device,
+        device_id=device_id,
     )
 
     readings = [
@@ -186,6 +179,7 @@ def send_demo(
 ) -> int:
     """Send all generated readings in their intended order."""
     for index, (scenario, reading) in enumerate(readings, start=1):
+        reading = prepare_reading_for_send(reading)
         try:
             result = send_reading(
                 api_url=api_url,
@@ -211,23 +205,26 @@ def send_demo(
             delay = critical_interval_seconds
         else:
             delay = interval_seconds
-        if delay > 0:
-            time.sleep(delay)
+        time.sleep(max(1.0, delay))
 
     print("\nSequence complete.")
-    print("Expected email alerts: 1 warning and 1 critical.")
-    print("The first critical should be CRITICAL_PENDING and send no email.")
+    print("Notification delivery depends on the device's existing alert state and cooldown.")
+    print("Critical notifications require consecutive critical readings.")
     return 0
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
-    readings = generate_demo_readings(
-        seed=args.seed,
-        device_prefix=args.device_prefix,
-        normal_interval_seconds=args.interval_seconds,
-        critical_interval_seconds=args.critical_interval_seconds,
-    )
+    try:
+        readings = generate_demo_readings(
+            seed=args.seed,
+            device_id=args.device_id,
+            normal_interval_seconds=args.interval_seconds,
+            critical_interval_seconds=args.critical_interval_seconds,
+        )
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
 
     if args.dry_run:
         output = [
@@ -249,6 +246,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
+    print(f"Dashboard device: {args.device_id}")
     return send_demo(
         readings=readings,
         api_url=args.api_url,

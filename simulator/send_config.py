@@ -2,11 +2,21 @@
 
 import json
 import os
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
 
 LOCAL_CONFIG = Path(__file__).resolve().with_name("simulator.local.json")
+
+
+def prepare_reading_for_send(reading):
+    return {
+        **reading,
+        "reading_id": str(uuid.uuid4()),
+        "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    }
 
 
 def resolve_api_url(explicit_url=None):

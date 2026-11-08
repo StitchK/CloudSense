@@ -16,10 +16,12 @@ import AlertDialog from "./components/AlertDialog";
 import AlertTable from "./components/AlertTable";
 import MetricCard from "./components/MetricCard";
 import StatusPill from "./components/StatusPill";
+import { recordIsStale } from "./records.js";
+import { startPolling } from "./polling.js";
+import { readPreference, writePreference, updateAlertState } from "./alertState.js";
 import {
   METRICS,
   RANGE_OPTIONS,
-  STATUS_LABELS,
   formatTimestamp,
 } from "./constants";
 
@@ -28,11 +30,11 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_DATA === "true";
 const POLL_INTERVAL = Number(import.meta.env.VITE_POLL_INTERVAL_MS || 5000);
 const STALE_AFTER_SECONDS = Number(
-  import.meta.env.VITE_STALE_AFTER_SECONDS || 30,
+  import.meta.env.VITE_STALE_AFTER_SECONDS || 300,
 );
 const DEFAULT_DEVICE =
-  import.meta.env.VITE_DEFAULT_DEVICE_ID || "device-1";
-const STATUS_PRIORITY = { normal: 0, warning: 1, critical: 2 };
+  import.meta.env.VITE_DEFAULT_DEVICE_ID || "device-001";
+const DEVICE_PREFERENCE = `cloudsense-device:${DEFAULT_DEVICE}`;
 const TrendChart = lazy(() => import("./components/TrendChart"));
 
 
@@ -40,42 +42,12 @@ function timeWindow(rangeValue) {
   const range = RANGE_OPTIONS.find((item) => item.value === rangeValue);
   const to = new Date();
   const from = new Date(to.getTime() - range.milliseconds);
-  return { from: from.toISOString(), to: to.toISOString() };
-}
-
-
-function detectNewAlertState(record, deviceId) {
-  if (!record) return false;
-  const storageKey = `cloudsense-active-alerts:${deviceId}`;
-  let previous = {};
-  try {
-    previous = JSON.parse(localStorage.getItem(storageKey) || "{}");
-  } catch {
-    previous = {};
-  }
-
-  const current = Object.fromEntries(
-    (record.alerts || []).map((alert) => [alert.metric, alert.severity]),
-  );
-  const hasNewOrEscalated = Object.entries(current).some(
-    ([metric, severity]) =>
-      !previous[metric] ||
-      STATUS_PRIORITY[severity] > STATUS_PRIORITY[previous[metric]],
-  );
-  localStorage.setItem(storageKey, JSON.stringify(current));
-  return hasNewOrEscalated;
-}
-
-
-function effectiveStatus(latest, isStale) {
-  if (!latest) return "unknown";
-  if (isStale) return "stale";
-  return latest.overallStatus || "unknown";
+  return { from, to };
 }
 
 
 export default function App() {
-  const initialDevice = localStorage.getItem("cloudsense-device") || DEFAULT_DEVICE;
+  const initialDevice = readPreference(DEVICE_PREFERENCE, DEFAULT_DEVICE);
   const [deviceId, setDeviceId] = useState(initialDevice);
   const [deviceDraft, setDeviceDraft] = useState(initialDevice);
   const [deviceError, setDeviceError] = useState("");
@@ -87,92 +59,66 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [alertLoading, setAlertLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [errors, setErrors] = useState({});
   const [paused, setPaused] = useState(false);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [clock, setClock] = useState(() => Date.now());
   const [dialogRecord, setDialogRecord] = useState(null);
   const lastProcessedRecord = useRef(null);
+  const activeAlerts = useRef({});
+  const pauseRef = useRef(paused);
+  pauseRef.current = paused;
   const trendSection = useRef(null);
-
-  const processLatest = (record) => {
-    setLatest(record);
-    if (!record || lastProcessedRecord.current === record.recordId) return;
-    lastProcessedRecord.current = record.recordId;
-    if (detectNewAlertState(record, deviceId)) {
-      setDialogRecord(record);
-    }
-  };
+  const error = Object.values(errors).filter(Boolean).join("；");
 
   useEffect(() => {
-    const controller = new AbortController();
-    const window = timeWindow(range);
+    try {
+      const saved = JSON.parse(readPreference(`cloudsense-alert-state:${deviceId}`, "{}"));
+      lastProcessedRecord.current = typeof saved.recordId === "string" ? saved.recordId : null;
+      activeAlerts.current = saved.levels && typeof saved.levels === "object" ? saved.levels : {};
+    } catch { lastProcessedRecord.current = null; activeAlerts.current = {}; }
     setLoading(true);
     setHistoryLoading(true);
     setAlertLoading(true);
-    setError("");
-
-    Promise.all([
-      fetchLatest({
-        apiBase: API_BASE,
-        deviceId,
-        signal: controller.signal,
-        useMock: USE_MOCK,
-      }),
-      fetchHistory({
-        apiBase: API_BASE,
-        deviceId,
-        ...window,
-        signal: controller.signal,
-        useMock: USE_MOCK,
-      }),
-      fetchAlerts({
-        apiBase: API_BASE,
-        deviceId,
-        ...window,
-        signal: controller.signal,
-        useMock: USE_MOCK,
-      }),
-    ])
-      .then(([latestResult, historyResult, alertResult]) => {
-        processLatest(latestResult);
-        setHistory(historyResult.records || []);
-        setAlertRecords(alertResult.records || []);
-      })
-      .catch((requestError) => {
-        if (requestError.name !== "AbortError") {
-          setError(requestError.message || "无法加载 Dashboard 数据");
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-          setHistoryLoading(false);
-          setAlertLoading(false);
-        }
-      });
-
-    return () => controller.abort();
+    return startPolling({
+      interval: Number.isFinite(POLL_INTERVAL) ? Math.max(1000, POLL_INTERVAL) : 5000,
+      canPoll: () => !pauseRef.current && !document.hidden,
+      load: (signal) => {
+        const options = { apiBase: API_BASE, deviceId, ...timeWindow(range), signal, useMock: USE_MOCK };
+        return Promise.allSettled([fetchLatest(options), fetchHistory(options), fetchAlerts(options)]);
+      },
+      onResult: ([latestResult, historyResult, alertResult]) => {
+        const failures = {};
+        if (latestResult.status === "fulfilled") {
+          const record = latestResult.value;
+          setLatest(record);
+          if (!record) {
+            lastProcessedRecord.current = null;
+            setDialogRecord(null);
+          } else if (lastProcessedRecord.current !== record.recordId) {
+            lastProcessedRecord.current = record.recordId;
+            const state = updateAlertState(record, activeAlerts.current);
+            activeAlerts.current = state.current;
+            writePreference(`cloudsense-alert-state:${deviceId}`, JSON.stringify({ recordId: record.recordId, levels: state.current }));
+            setDialogRecord((openRecord) => openRecord ? (record.alerts.length ? record : null) : null);
+            if (state.notify && !recordIsStale(record, Date.now(), STALE_AFTER_SECONDS)) setDialogRecord(record);
+          }
+        } else failures.latest = `最新数据：${latestResult.reason.message}`;
+        if (historyResult.status === "fulfilled") setHistory(historyResult.value.records);
+        else failures.history = `历史趋势：${historyResult.reason.message}`;
+        if (alertResult.status === "fulfilled") setAlertRecords(alertResult.value.records);
+        else failures.alerts = `异常记录：${alertResult.reason.message}`;
+        setErrors(failures);
+        setLoading(false);
+        setHistoryLoading(false);
+        setAlertLoading(false);
+      },
+      onError: (requestError) => {
+        setErrors({ latest: requestError.message });
+        setLoading(false); setHistoryLoading(false); setAlertLoading(false);
+      },
+    });
   }, [deviceId, range, refreshVersion]);
-
-  useEffect(() => {
-    if (paused || (!USE_MOCK && !API_BASE)) return undefined;
-    const interval = window.setInterval(async () => {
-      if (document.hidden) return;
-      try {
-        const record = await fetchLatest({
-          apiBase: API_BASE,
-          deviceId,
-          useMock: USE_MOCK,
-        });
-        processLatest(record);
-        setError("");
-      } catch (requestError) {
-        setError(requestError.message || "最新数据刷新失败");
-      }
-    }, POLL_INTERVAL);
-    return () => window.clearInterval(interval);
-  }, [deviceId, paused]);
 
   useEffect(() => {
     const interval = window.setInterval(() => setClock(Date.now()), 5000);
@@ -180,20 +126,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    lastProcessedRecord.current = null;
-    setDialogRecord(null);
-  }, [deviceId]);
+    if (dialogRecord && recordIsStale(dialogRecord, clock, STALE_AFTER_SECONDS)) setDialogRecord(null);
+  }, [clock, dialogRecord]);
 
-  const measurementTime = latest?.timestamp
-    ? new Date(latest.timestamp).getTime()
-    : null;
-  const isStale = Boolean(
-    latest &&
-      (latest.isLate ||
-        !measurementTime ||
-        clock - measurementTime > STALE_AFTER_SECONDS * 1000),
-  );
-  const status = effectiveStatus(latest, isStale);
+  const isStale = recordIsStale(latest, clock, STALE_AFTER_SECONDS);
+  const status = latest?.overallStatus || "unknown";
   const statusDescription = {
     normal: "所有指标均在项目设定的正常范围内",
     warning: "至少一项指标需要关注",
@@ -210,7 +147,11 @@ export default function App() {
       return;
     }
     setDeviceError("");
-    localStorage.setItem("cloudsense-device", normalized);
+    writePreference(DEVICE_PREFERENCE, normalized);
+    if (normalized !== deviceId) {
+      setLatest(null); setHistory([]); setAlertRecords([]); setErrors({});
+      setDialogRecord(null); lastProcessedRecord.current = null; activeAlerts.current = {};
+    }
     setDeviceId(normalized);
   };
 
@@ -254,7 +195,7 @@ export default function App() {
 
         <div className="connection-chip">
           {isStale || error ? <WifiOff size={17} /> : <Wifi size={17} />}
-          <span>{USE_MOCK ? "演示数据" : paused ? "刷新已暂停" : isStale ? "设备离线" : "实时连接"}</span>
+          <span>{USE_MOCK ? "演示数据" : error ? "连接异常" : paused ? "刷新已暂停" : !latest ? "等待数据" : isStale ? "数据未更新" : "实时连接"}</span>
         </div>
       </header>
 
@@ -276,6 +217,7 @@ export default function App() {
               <StatusPill status={status} />
             </div>
             <p>{statusDescription}</p>
+            {isStale && <p className="stale-notice">数据已过期，以上为最后一次测量的状态，请确认设备是否仍在上传。</p>}
           </div>
           <dl className="hero-meta">
             <div><dt>最近测量</dt><dd>{formatTimestamp(latest?.timestamp, { seconds: true })}</dd></div>
@@ -307,7 +249,7 @@ export default function App() {
         <section aria-labelledby="metrics-title">
           <div className="section-heading">
             <div><span className="eyebrow">Current readings</span><h2 id="metrics-title">当前身体数据</h2></div>
-            <span className="section-meta">每 {Math.round(POLL_INTERVAL / 1000)} 秒刷新</span>
+            <span className="section-meta">{paused ? "自动刷新已暂停" : `约每 ${Math.round(POLL_INTERVAL / 1000)} 秒刷新全部数据`}</span>
           </div>
           <div className="metric-grid">
             {Object.keys(METRICS).map((metricKey) => (
@@ -330,7 +272,12 @@ export default function App() {
                   key={option.value}
                   type="button"
                   className={range === option.value ? "active" : ""}
-                  onClick={() => setRange(option.value)}
+                  onClick={() => {
+                    if (range !== option.value) {
+                      setHistory([]); setAlertRecords([]); setHistoryLoading(true); setAlertLoading(true);
+                      setRange(option.value);
+                    }
+                  }}
                   aria-pressed={range === option.value}
                 >
                   {option.label}
@@ -354,7 +301,7 @@ export default function App() {
             ))}
           </div>
           <Suspense fallback={<div className="chart-skeleton" aria-label="趋势图加载中" />}>
-            <TrendChart records={history} metricKey={selectedMetric} loading={historyLoading} />
+            <TrendChart records={history} metricKey={selectedMetric} loading={historyLoading} error={errors.history} />
           </Suspense>
           <div className="chart-legend-note">
             <Activity size={16} aria-hidden="true" />
@@ -367,13 +314,13 @@ export default function App() {
             <div><span className="eyebrow">Alert history</span><h2 id="alerts-title">异常记录</h2></div>
             <span className="section-meta">{alertRecords.reduce((total, record) => total + (record.alerts?.length || 0), 0)} 条</span>
           </div>
-          <AlertTable records={alertRecords} loading={alertLoading} />
+          <AlertTable records={alertRecords} loading={alertLoading} error={errors.alerts} />
         </section>
       </main>
 
       <footer>
         <span>CloudSense Dashboard</span>
-        <span>状态判断来自 Lambda2，前端仅负责展示。</span>
+        <span>指标状态用于项目演示；异常时请关注实际身体状况。</span>
       </footer>
 
       {dialogRecord && (

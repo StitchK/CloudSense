@@ -1,3 +1,5 @@
+import { normalizeRecord } from "./records.js";
+
 const METRIC_CONFIG = {
   heart_rate_bpm: { unit: "bpm", baseline: 76 },
   body_temperature_c: { unit: "C", baseline: 36.7 },
@@ -90,18 +92,16 @@ function createRecord(deviceId, timestamp, index, total) {
       notificationStatus: value.status === "critical" ? "SENT" : "SUPPRESSED",
     }));
 
-  return {
-    recordId: `mock-${timestamp.getTime()}`,
-    deviceId,
-    timestamp: timestamp.toISOString(),
-    measuredAtEpoch: Math.floor(timestamp.getTime() / 1000),
-    activity: "rest",
-    overallStatus: overallStatus(metrics),
-    metrics,
-    alerts,
-    processingStatus: "COMPLETE",
-    isLate: false,
-  };
+  return normalizeRecord({
+    reading: {
+      ...values, reading_id: `mock-${timestamp.getTime()}`, device_id: deviceId,
+      timestamp: timestamp.toISOString(), activity: "rest",
+    },
+    evaluations: Object.entries(metrics).map(([metric, entry]) => ({ metric, level: entry.status })),
+    alerts: alerts.map((alert) => ({ metric: alert.metric, level: alert.severity, notification_status: alert.notificationStatus })),
+    measured_at_epoch: Math.floor(timestamp.getTime() / 1000),
+    overall_status: overallStatus(metrics), processing_status: "COMPLETE", is_late: false,
+  });
 }
 
 

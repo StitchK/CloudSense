@@ -9,15 +9,14 @@ import os
 import random
 import sys
 import time
-import uuid
 from datetime import datetime, timezone
 from typing import Optional, Sequence
 
 try:
-    from .send_config import resolve_api_url
+    from .send_config import prepare_reading_for_send, resolve_api_url
     from .simulator import ReadingSimulator, send_reading, validate_reading
 except ImportError:
-    from send_config import resolve_api_url
+    from send_config import prepare_reading_for_send, resolve_api_url
     from simulator import ReadingSimulator, send_reading, validate_reading
 
 
@@ -84,9 +83,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Probability of choosing warning instead of critical.",
     )
     parser.add_argument(
-        "--device-prefix",
-        default="random-demo",
-        help="Prefix used for the unique device ID in each cycle.",
+        "--device-id",
+        default="device-001",
+        help="Device monitored by the dashboard (default: device-001).",
     )
     parser.add_argument(
         "--interval-seconds",
@@ -125,17 +124,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_id() -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    return f"{timestamp}-{uuid.uuid4().hex[:4]}"
-
-
-def _device_id(prefix: str, run_id: str, cycle: int) -> str:
-    suffix = f"-{run_id}-c{cycle:04d}"
-    maximum_prefix_length = max(1, 64 - len(suffix))
-    return f"{prefix[:maximum_prefix_length]}{suffix}"
-
-
 def _generate_reading(
     seed: int,
     scenario: str,
@@ -151,6 +139,7 @@ def _generate_reading(
         metric="blood_pressure" if scenario != "normal" else None,
         device_id=device_id,
         sequence_offset=sequence,
+        interval_seconds=0,
     )[0]
     validate_reading(reading)
     return reading
@@ -238,14 +227,13 @@ def run(args: argparse.Namespace) -> int:
             return 2
 
     rng = random.Random(args.seed)
-    run_id = _run_id()
     cycle = 1
     sequence = 0
     dry_run_cycles = args.max_cycles or 1
 
     try:
         while args.max_cycles == 0 or cycle <= args.max_cycles:
-            device_id = _device_id(args.device_prefix, run_id, cycle)
+            device_id = args.device_id
             readings = build_cycle(
                 rng=rng,
                 device_id=device_id,
@@ -266,6 +254,7 @@ def run(args: argparse.Namespace) -> int:
                 f"on {device_id}"
             )
             for index, (scenario, reading) in enumerate(readings, start=1):
+                reading = prepare_reading_for_send(reading)
                 result = send_reading(
                     api_url=args.api_url,
                     reading=reading,
@@ -277,8 +266,8 @@ def run(args: argparse.Namespace) -> int:
                     f"[{index}/{len(readings)}] {scenario.upper():8s} "
                     f"{_summary(reading)} HTTP {result['status_code']}"
                 )
-                if index < len(readings) and args.interval_seconds > 0:
-                    time.sleep(args.interval_seconds)
+                if index < len(readings) or args.max_cycles == 0 or cycle < args.max_cycles:
+                    time.sleep(max(1.0, args.interval_seconds))
 
             cycle += 1
             sequence += len(readings)

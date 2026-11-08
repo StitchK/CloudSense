@@ -192,6 +192,7 @@ h1 { font-size: clamp(1.55rem, 2.5vw, 2.25rem); line-height: 1.15; }
 h2 { font-size: clamp(1.16rem, 1.7vw, 1.45rem); }
 h3 { font-size: 1rem; }
 .hero-copy > p { margin: 8px 0 0; color: var(--text-muted); }
+.hero-copy > .stale-notice { color: var(--warning); font-size: 0.82rem; }
 .hero-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0; }
 .hero-meta div { min-width: 0; padding-left: 14px; border-left: 1px solid var(--border-soft); }
 .hero-meta dt { color: var(--text-subtle); font-size: 0.75rem; }

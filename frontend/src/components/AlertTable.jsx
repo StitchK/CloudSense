@@ -5,6 +5,7 @@ import {
   formatTimestamp,
 } from "../constants";
 import StatusPill from "./StatusPill";
+import { notificationLabel } from "../records.js";
 
 
 function rowsFromRecords(records) {
@@ -20,8 +21,10 @@ function rowsFromRecords(records) {
 }
 
 
-export default function AlertTable({ records, loading }) {
+export default function AlertTable({ records, loading, error }) {
   const rows = rowsFromRecords(records);
+
+  if (error) return <div className="empty-state" role="status"><strong>异常记录暂时无法加载</strong><span>请重试，当前无法确认此时间范围内是否有异常。</span></div>;
 
   if (loading) {
     return (
@@ -51,7 +54,7 @@ export default function AlertTable({ records, loading }) {
             <th scope="col">检测时间</th>
             <th scope="col">等级</th>
             <th scope="col">异常参数</th>
-            <th scope="col">当前值</th>
+            <th scope="col">测量值</th>
             <th scope="col">原因</th>
             <th scope="col">通知状态</th>
           </tr>
@@ -66,7 +69,7 @@ export default function AlertTable({ records, loading }) {
                 {formatMetricValue(row.alert.metric, row.value)} {row.unit}
               </td>
               <td>{row.alert.reason || "指标超出设定范围"}</td>
-              <td>{row.alert.notificationStatus || "--"}</td>
+              <td>{notificationLabel(row.alert.notificationStatus)}</td>
             </tr>
           ))}
         </tbody>
