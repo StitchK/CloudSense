@@ -113,8 +113,6 @@ The tests use mocks and do not send data to AWS.
 
 For local Lambda3 unit tests, direct HTTP API checks, and optional live DynamoDB
 comparison without CloudShell, see [本机测试指南](LOCAL_TESTING.md).
-Deployment steps, test results, and screenshots are in
-[Lambda3 复现资料](Project%20Reproduction/04QueryLambda/QueryLambda.md).
 
 ## Deploy
 
