@@ -22,3 +22,6 @@ samconfig.local.toml
 
 output/
 dist/
+
+# Reproduction materials are maintained separately.
+/Project Reproduction/
