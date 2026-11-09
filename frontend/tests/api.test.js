@@ -47,7 +47,7 @@ print(json.dumps(app.lambda_handler(payload["event"],None)))
   assert.equal(latest.metrics.spo2_pct.status, "critical");
   assert.equal(latest.overallStatus, "critical");
   assert.equal(latest.alerts[0].notificationStatus, "CRITICAL_PENDING");
-  assert.equal(latest.alerts[0].reason, "血氧过低，测量值为 89 %");
+  assert.equal(latest.alerts[0].reason, "Blood oxygen is very low; measured value: 89 %");
   assert.equal(latest.isStale, false);
   for (const fetchList of [fetchHistory, fetchAlerts]) {
     const list = await fetchList(options);
@@ -94,5 +94,5 @@ test("missing latest is an empty device, while authorization and service errors 
 
 test("rejects a repeated page cursor instead of looping forever", async () => {
   globalThis.fetch = async () => response({ items: [], next_token: "same" });
-  await assert.rejects(fetchHistory(options), /分页未能继续/);
+  await assert.rejects(fetchHistory(options), /Pagination could not continue/);
 });

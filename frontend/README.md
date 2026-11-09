@@ -66,7 +66,8 @@ no AWS credentials or CloudShell are needed. `PYTHON` can select another Python 
 - Shows the saved Normal / Warning / Critical level separately from stale data
   (default 300 seconds, aligned with the backend). A stale Critical reading retains
   its Critical badge and has an additional stale notice; old data does not open a new popup.
-- Alert reasons use Warning → “偏高/偏低”, Critical → “过高/过低”, followed by
+- The interface, status labels, dialogs and error messages are in English.
+- Alert reasons use Warning → “high/low”, Critical → “very high/very low”, followed by
   the recorded value. Mixed blood-pressure directions name systolic and diastolic
   separately. Severity is always the backend's saved level; wording does not reclassify it.
 - Popups occur for new or escalated abnormalities, with per-device browser storage

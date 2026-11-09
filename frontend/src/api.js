@@ -8,7 +8,7 @@ export function wholeSecond(value) {
 }
 
 async function request(apiBase, path, parameters, signal) {
-  if (!apiBase) throw new Error("请先在 .env.local 中配置 VITE_API_BASE_URL");
+  if (!apiBase) throw new Error("Configure the query API URL before connecting.");
   const url = new URL(`${apiBase.replace(/\/$/, "")}${path}`);
   Object.entries(parameters).forEach(([key, value]) => {
     if (value != null && value !== "") url.searchParams.set(key, value);
@@ -17,14 +17,14 @@ async function request(apiBase, path, parameters, signal) {
   const abort = () => controller.abort();
   if (signal?.aborted) abort();
   signal?.addEventListener("abort", abort, { once: true });
-  const timeout = setTimeout(() => controller.abort(new Error("请求超时，请稍后重试")), 15000);
+  const timeout = setTimeout(() => controller.abort(new Error("Request timed out. Please try again.")), 15000);
   try {
     const response = await fetch(url, {
       method: "GET", headers: { Accept: "application/json" }, signal: controller.signal,
     });
     const body = await response.json();
     if (!response.ok) {
-      const error = new Error(body.message || `查询失败（HTTP ${response.status}）`);
+      const error = new Error(body.message || `Query failed (HTTP ${response.status})`);
       error.status = response.status;
       throw error;
     }
@@ -40,7 +40,7 @@ export async function fetchLatest({ apiBase, deviceId, signal, useMock }) {
   try {
     const body = await request(apiBase, `/devices/${encodeURIComponent(deviceId)}/latest`, {}, signal);
     const record = normalizeRecord(body.data);
-    if (record.deviceId !== deviceId) throw new Error("接口返回的设备与当前选择不一致");
+    if (record.deviceId !== deviceId) throw new Error("The returned device does not match the selected device.");
     return { ...record, isStale: body.is_stale, ageSeconds: body.age_seconds };
   } catch (error) {
     if (error.status === 404) return null;
@@ -58,10 +58,10 @@ async function fetchPages({ apiBase, deviceId, from, to, signal }, view) {
     const body = await request(apiBase, `/devices/${encodeURIComponent(deviceId)}/${view}`, {
       from: start, to: end, limit: 100, next_token: token,
     }, signal);
-    if (!Array.isArray(body.items)) throw new Error("查询接口返回的列表格式不完整");
+    if (!Array.isArray(body.items)) throw new Error("The query returned an incomplete list response.");
     for (const item of body.items) {
       const record = normalizeRecord(item);
-      if (record.deviceId !== deviceId) throw new Error("接口返回的设备与当前选择不一致");
+      if (record.deviceId !== deviceId) throw new Error("The returned device does not match the selected device.");
       records.set(record.recordId, record);
     }
     token = body.next_token;
@@ -71,10 +71,10 @@ async function fetchPages({ apiBase, deviceId, from, to, signal }, view) {
       if (view === "alerts") sorted.reverse();
       return { deviceId, records: sorted, count: sorted.length };
     }
-    if (tokens.has(token)) throw new Error("查询分页未能继续，请重试或缩短时间范围");
+    if (tokens.has(token)) throw new Error("Pagination could not continue. Retry or select a shorter time range.");
     tokens.add(token);
   }
-  throw new Error("查询范围内数据较多，请缩短时间范围后重试");
+  throw new Error("Too many readings. Select a shorter time range and try again.");
 }
 
 export async function fetchHistory(options) {

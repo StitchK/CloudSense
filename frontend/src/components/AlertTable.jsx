@@ -24,11 +24,11 @@ function rowsFromRecords(records) {
 export default function AlertTable({ records, loading, error }) {
   const rows = rowsFromRecords(records);
 
-  if (error) return <div className="empty-state" role="status"><strong>异常记录暂时无法加载</strong><span>请重试，当前无法确认此时间范围内是否有异常。</span></div>;
+  if (error) return <div className="empty-state" role="status"><strong>Alert history is unavailable</strong><span>Try again. Alerts for this time range could not be checked.</span></div>;
 
   if (loading) {
     return (
-      <div className="table-skeleton" aria-label="异常记录加载中">
+      <div className="table-skeleton" aria-label="Loading alert history">
         <span />
         <span />
         <span />
@@ -39,8 +39,8 @@ export default function AlertTable({ records, loading, error }) {
     return (
       <div className="empty-state">
         <BellOff size={24} strokeWidth={1.6} aria-hidden="true" />
-        <strong>当前范围内没有异常</strong>
-        <span>Warning 和 Critical 事件会保留在这里。</span>
+        <strong>No alerts in this time range</strong>
+        <span>Warning and Critical events will appear here.</span>
       </div>
     );
   }
@@ -48,15 +48,15 @@ export default function AlertTable({ records, loading, error }) {
   return (
     <div className="table-wrap">
       <table>
-        <caption className="sr-only">设备异常记录</caption>
+        <caption className="sr-only">Device alert history</caption>
         <thead>
           <tr>
-            <th scope="col">检测时间</th>
-            <th scope="col">等级</th>
-            <th scope="col">异常参数</th>
-            <th scope="col">测量值</th>
-            <th scope="col">原因</th>
-            <th scope="col">通知状态</th>
+            <th scope="col">Measured at</th>
+            <th scope="col">Severity</th>
+            <th scope="col">Metric</th>
+            <th scope="col">Measured value</th>
+            <th scope="col">Reason</th>
+            <th scope="col">Notification status</th>
           </tr>
         </thead>
         <tbody>
@@ -68,7 +68,7 @@ export default function AlertTable({ records, loading, error }) {
               <td className="table-value">
                 {formatMetricValue(row.alert.metric, row.value)} {row.unit}
               </td>
-              <td>{row.alert.reason || "指标超出设定范围"}</td>
+              <td>{row.alert.reason || "Reading outside the configured range"}</td>
               <td>{notificationLabel(row.alert.notificationStatus)}</td>
             </tr>
           ))}

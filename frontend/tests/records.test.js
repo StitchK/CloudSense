@@ -4,14 +4,14 @@ import { describeAlert, normalizeRecord, recordIsStale } from "../src/records.js
 import { updateAlertState } from "../src/alertState.js";
 import { publicItem } from "./fixtures.js";
 
-test("warning uses 偏 and critical uses 过 for the measured direction and value", () => {
-  assert.equal(describeAlert("blood_pressure", { systolic: 150, diastolic: 95 }, "warning"), "血压偏高，测量值为 150/95 mmHg");
-  assert.equal(describeAlert("blood_pressure", { systolic: 190, diastolic: 125 }, "critical"), "血压过高，测量值为 190/125 mmHg");
-  assert.equal(describeAlert("blood_pressure", { systolic: 52, diastolic: 30 }, "critical"), "血压过低，测量值为 52/30 mmHg");
-  assert.match(describeAlert("heart_rate_bpm", 110, "warning"), /心率偏高.*110/);
-  assert.match(describeAlert("body_temperature_c", 38.5, "critical"), /体温过高.*38.5/);
-  assert.match(describeAlert("spo2_pct", 93, "warning"), /血氧偏低.*93/);
-  assert.match(describeAlert("blood_pressure", { systolic: 190, diastolic: 55 }, "critical"), /收缩压过高、舒张压偏低/);
+test("English alert descriptions distinguish warning and critical with direction and value", () => {
+  assert.equal(describeAlert("blood_pressure", { systolic: 150, diastolic: 95 }, "warning"), "Blood pressure is high; measured value: 150/95 mmHg");
+  assert.equal(describeAlert("blood_pressure", { systolic: 190, diastolic: 125 }, "critical"), "Blood pressure is very high; measured value: 190/125 mmHg");
+  assert.equal(describeAlert("blood_pressure", { systolic: 52, diastolic: 30 }, "critical"), "Blood pressure is very low; measured value: 52/30 mmHg");
+  assert.match(describeAlert("heart_rate_bpm", 110, "warning"), /Heart rate is high.*110/);
+  assert.match(describeAlert("body_temperature_c", 38.5, "critical"), /Body temperature is very high.*38.5/);
+  assert.match(describeAlert("spo2_pct", 93, "warning"), /Blood oxygen is low.*93/);
+  assert.match(describeAlert("blood_pressure", { systolic: 190, diastolic: 55 }, "critical"), /Systolic pressure is very high; diastolic pressure is low/);
 });
 
 test("description does not change backend severity, and critical is first in mixed alerts", () => {

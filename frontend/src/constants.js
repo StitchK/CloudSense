@@ -1,34 +1,34 @@
 export const STATUS_LABELS = {
-  normal: "正常",
-  warning: "警告",
-  critical: "严重",
-  unknown: "未知",
-  stale: "数据过期",
+  normal: "Normal",
+  warning: "Warning",
+  critical: "Critical",
+  unknown: "Unknown",
+  stale: "Outdated data",
 };
 
 
 export const METRICS = {
   heart_rate_bpm: {
-    label: "心率",
-    shortLabel: "心率",
+    label: "Heart rate",
+    shortLabel: "Heart rate",
     range: "60–100 bpm",
     color: "#5eead4",
   },
   body_temperature_c: {
-    label: "体温",
-    shortLabel: "体温",
+    label: "Body temperature",
+    shortLabel: "Body temperature",
     range: "36.1–37.4 °C",
     color: "#fbbf24",
   },
   spo2_pct: {
-    label: "血氧",
+    label: "Blood oxygen",
     shortLabel: "SpO₂",
     range: "≥ 95%",
     color: "#60a5fa",
   },
   blood_pressure: {
-    label: "血压",
-    shortLabel: "血压",
+    label: "Blood pressure",
+    shortLabel: "Blood pressure",
     range: "90–130 / 60–85 mmHg",
     color: "#c084fc",
   },
@@ -36,9 +36,9 @@ export const METRICS = {
 
 
 export const RANGE_OPTIONS = [
-  { value: "1h", label: "1 小时", milliseconds: 60 * 60 * 1000 },
-  { value: "24h", label: "24 小时", milliseconds: 24 * 60 * 60 * 1000 },
-  { value: "7d", label: "7 天", milliseconds: 7 * 24 * 60 * 60 * 1000 },
+  { value: "1h", label: "1 hour", milliseconds: 60 * 60 * 1000 },
+  { value: "24h", label: "24 hours", milliseconds: 24 * 60 * 60 * 1000 },
+  { value: "7d", label: "7 days", milliseconds: 7 * 24 * 60 * 60 * 1000 },
 ];
 
 
@@ -56,7 +56,7 @@ export function formatTimestamp(value, options = {}) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--";
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat("en-GB", {
     month: "2-digit",
     day: "2-digit",
     hour: "2-digit",

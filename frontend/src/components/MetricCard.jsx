@@ -29,13 +29,13 @@ export default function MetricCard({ metricKey, metric, loading }) {
         </div>
         <div>
           <h3 id={`${metricKey}-title`}>{config.label}</h3>
-          <p>参考范围 {config.range}</p>
+          <p>Reference range {config.range}</p>
         </div>
         <StatusPill status={status} compact />
       </div>
 
       {loading ? (
-        <div className="metric-skeleton" aria-label={`${config.label}加载中`} />
+        <div className="metric-skeleton" aria-label={`Loading ${config.label.toLowerCase()}`} />
       ) : (
         <div className="metric-reading">
           <strong>{formatMetricValue(metricKey, metric?.value)}</strong>

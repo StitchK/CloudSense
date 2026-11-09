@@ -88,7 +88,7 @@ function createRecord(deviceId, timestamp, index, total) {
     .map(([metric, value]) => ({
       metric,
       severity: value.status,
-      reason: `${metric} 当前读数超出项目设定范围`,
+      reason: `${metric} is outside the configured range`,
       notificationStatus: value.status === "critical" ? "SENT" : "SUPPRESSED",
     }));
 

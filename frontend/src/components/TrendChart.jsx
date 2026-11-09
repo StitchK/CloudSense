@@ -38,7 +38,7 @@ function seriesForMetric(records, metricKey) {
   if (metricKey === "blood_pressure") {
     return [
       {
-        name: "收缩压",
+        name: "Systolic",
         type: "line",
         smooth: 0.28,
         symbol: "circle",
@@ -52,7 +52,7 @@ function seriesForMetric(records, metricKey) {
         })),
       },
       {
-        name: "舒张压",
+        name: "Diastolic",
         type: "line",
         smooth: 0.28,
         symbol: "diamond",
@@ -104,7 +104,7 @@ export default function TrendChart({ records, metricKey, loading, error }) {
     aria: {
       enabled: true,
       decal: { show: true },
-      description: `${config.label}历史趋势，共 ${records.length} 个数据点`,
+      description: `${config.label} history with ${records.length} data ${records.length === 1 ? "point" : "points"}`,
     },
     grid: { left: 12, right: 18, top: 42, bottom: 12, containLabel: true },
     legend: {
@@ -125,7 +125,7 @@ export default function TrendChart({ records, metricKey, loading, error }) {
         const values = parameters
           .map((parameter) => {
             const raw = parameter.data?.value ?? parameter.data;
-            return `${parameter.marker}${parameter.seriesName}：${raw ?? "--"}`;
+            return `${parameter.marker}${parameter.seriesName}: ${raw ?? "--"}`;
           })
           .join("<br/>");
         return `${header}<br/>${values}`;
@@ -164,16 +164,16 @@ export default function TrendChart({ records, metricKey, loading, error }) {
     };
   }, [error, loading, metricKey, records]);
 
-  if (error) return <div key="error" className="empty-state chart-empty"><strong>历史趋势暂时无法加载</strong><span>请重试或选择更短的时间范围。</span></div>;
+  if (error) return <div key="error" className="empty-state chart-empty"><strong>Historical trends are unavailable</strong><span>Try again or select a shorter time range.</span></div>;
 
   if (loading) {
-    return <div key="loading" className="chart-skeleton" aria-label="历史趋势加载中" />;
+    return <div key="loading" className="chart-skeleton" aria-label="Loading historical trends" />;
   }
   if (!records.length) {
     return (
       <div key="empty" className="empty-state chart-empty">
-        <strong>暂无趋势数据</strong>
-        <span>选择其他时间范围或确认设备已经上传数据。</span>
+        <strong>No trend data</strong>
+        <span>Select another time range or check that the device has uploaded readings.</span>
       </div>
     );
   }
@@ -183,7 +183,7 @@ export default function TrendChart({ records, metricKey, loading, error }) {
       key="chart"
       ref={chartElement}
       className="trend-chart"
-      aria-label={`${config.label}历史趋势图。最新值为 ${formatMetricValue(
+      aria-label={`${config.label} history chart. Latest value: ${formatMetricValue(
         metricKey,
         records.at(-1)?.metrics?.[metricKey]?.value,
       )}`}

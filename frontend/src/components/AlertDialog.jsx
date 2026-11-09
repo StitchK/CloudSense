@@ -37,10 +37,10 @@ export default function AlertDialog({ record, onClose, onViewTrend }) {
         </div>
         <div>
           <StatusPill status={primaryAlert.severity} compact />
-          <h2 id="alert-title">检测到新的身体指标异常</h2>
+          <h2 id="alert-title">New abnormal reading detected</h2>
           <p>{formatTimestamp(record.timestamp, { seconds: true })}</p>
         </div>
-        <button className="icon-button" type="button" onClick={onClose} aria-label="关闭异常提醒">
+        <button className="icon-button" type="button" onClick={onClose} aria-label="Close alert">
           <X size={20} aria-hidden="true" />
         </button>
       </div>
@@ -58,14 +58,14 @@ export default function AlertDialog({ record, onClose, onViewTrend }) {
                 {formatMetricValue(alert.metric, metric?.value)}
                 <span>{metric?.unit}</span>
               </p>
-              <p>{alert.reason || "当前值超出项目设置的安全范围"}</p>
+              <p>{alert.reason || "This reading is outside the configured range."}</p>
             </article>
           );
         })}
       </div>
 
       <p className="dialog-note">
-        关闭仅表示已查看。异常恢复正常后，当前告警状态才会解除。
+        Dismissing this message acknowledges it. The alert status remains until the readings return to normal.
       </p>
       <div className="dialog-actions">
         <button
@@ -73,10 +73,10 @@ export default function AlertDialog({ record, onClose, onViewTrend }) {
           className="secondary-button"
           onClick={() => onViewTrend(primaryAlert.metric)}
         >
-          查看趋势
+          View trend
         </button>
         <button type="button" className="primary-button" onClick={onClose} autoFocus>
-          我知道了
+          Got it
         </button>
       </div>
     </dialog>

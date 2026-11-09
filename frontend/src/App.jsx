@@ -69,7 +69,8 @@ export default function App() {
   const pauseRef = useRef(paused);
   pauseRef.current = paused;
   const trendSection = useRef(null);
-  const error = Object.values(errors).filter(Boolean).join("；");
+  const error = Object.values(errors).filter(Boolean).join("; ");
+  const alertCount = alertRecords.reduce((total, record) => total + (record.alerts?.length || 0), 0);
 
   useEffect(() => {
     try {
@@ -103,11 +104,11 @@ export default function App() {
             setDialogRecord((openRecord) => openRecord ? (record.alerts.length ? record : null) : null);
             if (state.notify && !recordIsStale(record, Date.now(), STALE_AFTER_SECONDS)) setDialogRecord(record);
           }
-        } else failures.latest = `最新数据：${latestResult.reason.message}`;
+        } else failures.latest = `Latest reading: ${latestResult.reason.message}`;
         if (historyResult.status === "fulfilled") setHistory(historyResult.value.records);
-        else failures.history = `历史趋势：${historyResult.reason.message}`;
+        else failures.history = `History: ${historyResult.reason.message}`;
         if (alertResult.status === "fulfilled") setAlertRecords(alertResult.value.records);
-        else failures.alerts = `异常记录：${alertResult.reason.message}`;
+        else failures.alerts = `Alerts: ${alertResult.reason.message}`;
         setErrors(failures);
         setLoading(false);
         setHistoryLoading(false);
@@ -132,18 +133,18 @@ export default function App() {
   const isStale = recordIsStale(latest, clock, STALE_AFTER_SECONDS);
   const status = latest?.overallStatus || "unknown";
   const statusDescription = {
-    normal: "所有指标均在项目设定的正常范围内",
-    warning: "至少一项指标需要关注",
-    critical: "检测到严重异常，请立即查看详情",
-    stale: "长时间没有收到新数据，请检查设备连接",
-    unknown: "正在等待设备数据",
+    normal: "All readings are within the configured normal ranges.",
+    warning: "At least one reading needs attention.",
+    critical: "Critical reading detected. Review the details now.",
+    stale: "No recent readings. Check the device connection.",
+    unknown: "Waiting for device readings.",
   }[status];
 
   const submitDevice = (event) => {
     event.preventDefault();
     const normalized = deviceDraft.trim();
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{2,63}$/.test(normalized)) {
-      setDeviceError("设备编号需为 3–64 位字母、数字、下划线或连字符");
+      setDeviceError("Use 3–64 characters: letters, numbers, underscores or hyphens. Start with a letter or number.");
       return;
     }
     setDeviceError("");
@@ -167,7 +168,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">跳到主要内容</a>
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <header className="topbar">
         <div className="brand" aria-label="CloudSense">
           <span className="brand-mark" aria-hidden="true"><HeartPulse size={22} /></span>
@@ -178,7 +179,7 @@ export default function App() {
         </div>
 
         <form className="device-form" onSubmit={submitDevice}>
-          <label htmlFor="device-id">监测设备</label>
+          <label htmlFor="device-id">Device ID</label>
           <div>
             <input
               id="device-id"
@@ -188,14 +189,14 @@ export default function App() {
               autoComplete="off"
               spellCheck="false"
             />
-            <button type="submit" className="secondary-button">切换</button>
+            <button type="submit" className="secondary-button">Switch</button>
           </div>
           {deviceError && <span id="device-error" className="field-error">{deviceError}</span>}
         </form>
 
         <div className="connection-chip">
           {isStale || error ? <WifiOff size={17} /> : <Wifi size={17} />}
-          <span>{USE_MOCK ? "演示数据" : error ? "连接异常" : paused ? "刷新已暂停" : !latest ? "等待数据" : isStale ? "数据未更新" : "实时连接"}</span>
+          <span>{USE_MOCK ? "Demo data" : error ? "Connection error" : paused ? "Refresh paused" : !latest ? "Waiting for data" : isStale ? "Outdated data" : "Live connection"}</span>
         </div>
       </header>
 
@@ -203,26 +204,26 @@ export default function App() {
         {error && (
           <div className="error-banner" role="alert">
             <CloudCog size={20} aria-hidden="true" />
-            <div><strong>数据连接异常</strong><span>{error}</span></div>
-            <button type="button" onClick={() => setRefreshVersion((value) => value + 1)}>重试</button>
+            <div><strong>Data connection error</strong><span>{error}</span></div>
+            <button type="button" onClick={() => setRefreshVersion((value) => value + 1)}>Retry</button>
           </div>
         )}
 
         <section className={`status-hero hero-${status}`} aria-labelledby="dashboard-title">
           <div className="hero-icon" aria-hidden="true"><StatusIcon size={30} strokeWidth={1.8} /></div>
           <div className="hero-copy">
-            <span className="eyebrow">设备 {deviceId}</span>
+            <span className="eyebrow">Device {deviceId}</span>
             <div className="hero-title-row">
-              <h1 id="dashboard-title">身体数据监测</h1>
+              <h1 id="dashboard-title">Health Monitor</h1>
               <StatusPill status={status} />
             </div>
             <p>{statusDescription}</p>
-            {isStale && <p className="stale-notice">数据已过期，以上为最后一次测量的状态，请确认设备是否仍在上传。</p>}
+            {isStale && <p className="stale-notice">These readings are outdated. The status reflects the last measurement. Check that the device is still uploading.</p>}
           </div>
           <dl className="hero-meta">
-            <div><dt>最近测量</dt><dd>{formatTimestamp(latest?.timestamp, { seconds: true })}</dd></div>
-            <div><dt>活动状态</dt><dd>{latest?.activity || "--"}</dd></div>
-            <div><dt>处理状态</dt><dd>{latest?.processingStatus || "--"}</dd></div>
+            <div><dt>Last measured</dt><dd>{formatTimestamp(latest?.timestamp, { seconds: true })}</dd></div>
+            <div><dt>Activity</dt><dd>{latest?.activity || "--"}</dd></div>
+            <div><dt>Processing</dt><dd>{latest?.processingStatus || "--"}</dd></div>
           </dl>
           <div className="hero-actions">
             <button
@@ -232,14 +233,14 @@ export default function App() {
               aria-pressed={paused}
             >
               {paused ? <CirclePlay size={18} /> : <CirclePause size={18} />}
-              {paused ? "继续刷新" : "暂停刷新"}
+              {paused ? "Resume updates" : "Pause updates"}
             </button>
             <button
               type="button"
               className="icon-button"
               onClick={() => setRefreshVersion((value) => value + 1)}
-              aria-label="立即刷新全部数据"
-              title="立即刷新"
+              aria-label="Refresh all readings now"
+              title="Refresh now"
             >
               <RefreshCw size={19} aria-hidden="true" />
             </button>
@@ -248,8 +249,8 @@ export default function App() {
 
         <section aria-labelledby="metrics-title">
           <div className="section-heading">
-            <div><span className="eyebrow">Current readings</span><h2 id="metrics-title">当前身体数据</h2></div>
-            <span className="section-meta">{paused ? "自动刷新已暂停" : `约每 ${Math.round(POLL_INTERVAL / 1000)} 秒刷新全部数据`}</span>
+            <div><span className="eyebrow">Current readings</span><h2 id="metrics-title">Current readings</h2></div>
+            <span className="section-meta">{paused ? "Automatic updates paused" : `Updates about every ${Math.round(POLL_INTERVAL / 1000)} seconds`}</span>
           </div>
           <div className="metric-grid">
             {Object.keys(METRICS).map((metricKey) => (
@@ -265,8 +266,8 @@ export default function App() {
 
         <section className="dashboard-panel trend-panel" aria-labelledby="trend-title" ref={trendSection}>
           <div className="panel-heading">
-            <div><span className="eyebrow">Trend analysis</span><h2 id="trend-title">历史趋势</h2></div>
-            <div className="segmented-control" aria-label="趋势时间范围">
+            <div><span className="eyebrow">Trend analysis</span><h2 id="trend-title">Historical trends</h2></div>
+            <div className="segmented-control" aria-label="Trend time range">
               {RANGE_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -285,7 +286,7 @@ export default function App() {
               ))}
             </div>
           </div>
-          <div className="metric-tabs" role="tablist" aria-label="选择趋势指标">
+          <div className="metric-tabs" role="tablist" aria-label="Select a trend metric">
             {Object.entries(METRICS).map(([key, metric]) => (
               <button
                 key={key}
@@ -300,19 +301,19 @@ export default function App() {
               </button>
             ))}
           </div>
-          <Suspense fallback={<div className="chart-skeleton" aria-label="趋势图加载中" />}>
+          <Suspense fallback={<div className="chart-skeleton" aria-label="Loading trend chart" />}>
             <TrendChart records={history} metricKey={selectedMetric} loading={historyLoading} error={errors.history} />
           </Suspense>
           <div className="chart-legend-note">
             <Activity size={16} aria-hidden="true" />
-            异常点使用更大的黄色或红色标记；完整异常说明见下方记录。
+            Abnormal readings use larger yellow or red markers. See the alert history below for details.
           </div>
         </section>
 
         <section className="dashboard-panel" aria-labelledby="alerts-title">
           <div className="panel-heading">
-            <div><span className="eyebrow">Alert history</span><h2 id="alerts-title">异常记录</h2></div>
-            <span className="section-meta">{alertRecords.reduce((total, record) => total + (record.alerts?.length || 0), 0)} 条</span>
+            <div><span className="eyebrow">Alert history</span><h2 id="alerts-title">Alert history</h2></div>
+            <span className="section-meta">{alertCount} {alertCount === 1 ? "alert" : "alerts"}</span>
           </div>
           <AlertTable records={alertRecords} loading={alertLoading} error={errors.alerts} />
         </section>
@@ -320,7 +321,7 @@ export default function App() {
 
       <footer>
         <span>CloudSense Dashboard</span>
-        <span>指标状态用于项目演示；异常时请关注实际身体状况。</span>
+        <span>Reading statuses are for this project demonstration. Pay attention to your health if an abnormal reading appears.</span>
       </footer>
 
       {dialogRecord && (
