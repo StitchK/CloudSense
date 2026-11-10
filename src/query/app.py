@@ -11,6 +11,12 @@ import time
 from datetime import datetime, timezone
 from decimal import Decimal
 
+try:
+    from common.observability import emit
+except ModuleNotFoundError:
+    def emit(event, **fields):
+        print(json.dumps({"event": event, "logged_at_ms": time.time_ns() // 1_000_000, **fields}))
+
 
 ROUTES = {
     "GET /devices/{device_id}/latest": "latest",
@@ -157,6 +163,7 @@ def _public_reading(item):
         "measured_at_epoch": item["measured_at_epoch"],
         "processing_status": item.get("processing_status", "UNKNOWN"),
         "updated_at": item.get("updated_at"),
+        "completed_at_ms": item.get("completed_at_ms"),
     }
 
 
@@ -239,6 +246,7 @@ def _list_readings(table_factory, device_id, view, params, now):
 
 
 def lambda_handler(event, context):
+    started = time.perf_counter()
     request_context = event.get("requestContext") or {}
     request_id = request_context.get("requestId") or getattr(
         context, "aws_request_id", "unknown"
@@ -265,8 +273,10 @@ def lambda_handler(event, context):
             body = _latest(get_table(), device_id, now)
         else:
             body = _list_readings(get_table, device_id, view, params, now)
+        emit("dashboard_query_completed", request_id=request_id, device_id=device_id, view=view, status_code=200, count=body.get("count", 1), duration_ms=round((time.perf_counter() - started) * 1000, 3))
         return _response(200, body, request_id)
     except RequestError as exc:
+        emit("dashboard_query_rejected", request_id=request_id, status_code=exc.status_code)
         return _response(
             exc.status_code, {"message": str(exc), "request_id": request_id}, request_id
         )

@@ -1,4 +1,5 @@
 from decimal import Decimal
+import time
 
 
 def _dynamodb_value(value):
@@ -92,7 +93,7 @@ def finish_reading(table, reading_id, status, now):
     """Mark the dashboard history record as complete or late-only."""
     table.update_item(
         Key=_reading_key(reading_id),
-        UpdateExpression="SET processing_status = :status, updated_at = :now",
-        ExpressionAttributeValues={":status": status, ":now": int(now)},
+        UpdateExpression="SET processing_status = :status, updated_at = :now, completed_at_ms = :completed",
+        ExpressionAttributeValues={":status": status, ":now": int(now), ":completed": time.time_ns() // 1_000_000},
         ConditionExpression="attribute_exists(PK)",
     )

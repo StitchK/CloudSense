@@ -4,6 +4,7 @@ import os
 import time
 
 try:
+    from common.observability import emit
     from common.alert_rules import evaluate_reading_results
     from common.alert_state import (
         claim_notification,
@@ -21,6 +22,7 @@ try:
     from common.reading_store import finish_reading, save_reading, update_alert_history
     from notification import send_alert
 except ModuleNotFoundError:
+    from src.common.observability import emit
     from src.common.alert_rules import evaluate_reading_results
     from src.common.alert_state import (
         claim_notification,
@@ -73,7 +75,7 @@ def _get_dependencies():
     return table, topic_arn
 
 
-def process_reading(reading, table, topic_arn, now=None):
+def _process_reading(reading, table, topic_arn, now=None):
     """Store, evaluate, and process one reading with per-metric idempotency."""
     now = int(time.time() if now is None else now)
     reading = dict(reading)
@@ -81,7 +83,7 @@ def process_reading(reading, table, topic_arn, now=None):
     reading["reading_id"] = reading_id
 
     if has_reading_progress(table, reading_id, DONE_METRIC):
-        return
+        return "DUPLICATE_SKIPPED"
 
     cooldown = int(os.getenv("ALERT_COOLDOWN_SECONDS", "300"))
     lease_seconds = int(os.getenv("CLAIM_LEASE_SECONDS", "60"))
@@ -116,7 +118,7 @@ def process_reading(reading, table, topic_arn, now=None):
             now,
             READING_RETENTION_SECONDS,
         )
-        return
+        return "LATE"
 
     for result in results:
         metric = result["metric"]
@@ -205,6 +207,20 @@ def process_reading(reading, table, topic_arn, now=None):
         now,
         READING_RETENTION_SECONDS,
     )
+    return "COMPLETE"
+
+
+def process_reading(reading, table, topic_arn, now=None):
+    started = time.perf_counter()
+    identifiers = {"reading_id": _reading_id(reading), "device_id": reading.get("device_id")}
+    emit("processing_started", **identifiers)
+    try:
+        status = _process_reading(reading, table, topic_arn, now)
+        emit("processing_completed", **identifiers, processing_status=status, duration_ms=round((time.perf_counter() - started) * 1000, 3))
+        return status
+    except Exception as error:
+        emit("processing_failed", **identifiers, error_type=type(error).__name__, duration_ms=round((time.perf_counter() - started) * 1000, 3))
+        raise
 
 
 def lambda_handler(event, context):

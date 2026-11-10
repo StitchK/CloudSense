@@ -6,10 +6,12 @@ import base64
 import binascii
 import json
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from common.validation import ReadingValidationError, validate_reading
+from common.observability import emit
 
 
 MAX_BODY_BYTES = 16 * 1024
@@ -138,18 +140,21 @@ def _request_id(event: Dict[str, Any], context: Any) -> Optional[str]:
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Validate an API Gateway reading and enqueue it for processing."""
     request_id = _request_id(event, context)
+    started = time.perf_counter()
 
     try:
         reading = _parse_body(event)
         received_at = datetime.now(timezone.utc)
         validation = validate_reading(reading, now=received_at)
     except RequestError as exc:
+        emit("ingest_rejected", request_id=request_id, status_code=exc.status_code)
         return response(
             exc.status_code,
             {"message": exc.message, "errors": exc.details},
             request_id,
         )
     except ReadingValidationError as exc:
+        emit("ingest_rejected", request_id=request_id, status_code=400, invalid_fields=sorted(exc.errors))
         return response(
             400,
             {"message": "reading validation failed", "errors": exc.errors},
@@ -172,7 +177,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "reading_id": enriched.get("reading_id"),
                 "request_id": request_id,
                 "is_late": validation.is_late,
-                "payload": enriched,
             },
             separators=(",", ":"),
             sort_keys=True,
@@ -189,7 +193,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         )
 
     try:
-        get_sqs_client().send_message(
+        queued = get_sqs_client().send_message(
             QueueUrl=queue_url,
             MessageBody=json.dumps(enriched, separators=(",", ":")),
         )
@@ -210,6 +214,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             request_id,
         )
 
+    emit("reading_enqueued", reading_id=enriched["reading_id"], device_id=enriched["device_id"], request_id=request_id, message_id=queued.get("MessageId"), duration_ms=round((time.perf_counter() - started) * 1000, 3))
     return response(
         202,
         {

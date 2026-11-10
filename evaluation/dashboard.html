@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CloudSense evaluation</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#182938;background:#f3f6fa}body{max-width:1180px;margin:36px auto;padding:0 24px}h1{font-size:30px;margin-bottom:6px}p{line-height:1.6;color:#536575}.top{display:flex;justify-content:space-between;align-items:center}.badge{background:#dbeafe;padding:10px 18px;border-radius:20px;font-weight:700}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:26px 0}.card,section{background:white;border:1px solid #dce4ed;border-radius:12px;padding:20px}.value{font-size:32px;font-weight:700;margin-top:10px}.label{color:#536575;font-size:14px}section{margin:18px 0}h2{font-size:19px;margin-top:0}svg{width:100%;height:270px}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:12px;text-align:left;border-bottom:1px solid #e4eaf1}.legend{display:flex;gap:24px}.legend span:before{content:'●';color:var(--c);margin-right:7px}.small{font-size:13px}#errors{color:#ad3425;white-space:pre-wrap}@media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}body{padding:0 12px}.top{display:block}table{font-size:12px}}
+</style>
+<div class="top"><div><h1>CloudSense evaluation</h1><p id="run">Waiting for experiment</p></div><div class="badge" id="phase">Starting</div></div>
+<div class="grid" id="cards"></div>
+<section><h2>Readings through the cloud workflow</h2><div class="legend"><span style="--c:#64748b">Sent</span><span style="--c:#2563eb">Accepted</span><span style="--c:#059669">Completed</span></div><svg id="chart" viewBox="0 0 1080 270" role="img" aria-label="Cumulative sent accepted and completed readings"></svg><p class="small">Completed means the query API returned a final processing state. HTTP 202 alone is acceptance.</p></section>
+<section><h2>Measured latency</h2><table><thead><tr><th>Measurement</th><th>P50</th><th>P95</th><th>What it includes</th></tr></thead><tbody id="latency"></tbody></table><p class="small">Observed completion is a polling upper bound. Backend timing uses AWS timestamps; missing timing stays unavailable.</p></section>
+<section><h2>Experiment details</h2><p id="details"></p><p class="small">Normal synthetic data only. This page does not initiate faults, change AWS permissions or send test email alerts. Security assessment is deferred.</p><div id="errors"></div></section>
+<script>
+window.ARCHIVE_DATA = null;
+const fmt=value=>value==null?'Unavailable':`${Number(value).toFixed(1)} ms`;
+function draw(data){
+ document.querySelector('#run').textContent=`${data.run_id} · ${data.started_at} · UTC`;
+ document.querySelector('#phase').textContent=data.phase;
+ const metrics=[['Sent',data.sent],['Accepted',data.accepted],['Completed',data.completed],['Pending accepted',data.pending_accepted],['Target rate',`${data.target_rate}/s`],['Actual send rate',`${data.actual_send_rate}/s`],['API P95',fmt(data.api_p95_ms)],['Backend P95',fmt(data.backend_p95_ms)]];
+ document.querySelector('#cards').innerHTML=metrics.map(([label,value])=>`<div class="card"><div class="label">${label}</div><div class="value">${value}</div></div>`).join('');
+ document.querySelector('#latency').innerHTML=[['API acceptance',data.api_p50_ms,data.api_p95_ms,'Client network and ingestion'],['Backend completion',data.backend_p50_ms,data.backend_p95_ms,'Ingest received_at to stored completion'],['First observed completion',null,data.observed_p95_ms,'Client network, processing, index visibility and polling']].map(row=>`<tr><td>${row[0]}</td><td>${fmt(row[1])}</td><td>${fmt(row[2])}</td><td>${row[3]}</td></tr>`).join('');
+ document.querySelector('#details').textContent=`${data.device_count} virtual devices · ${data.target_duration_seconds}s planned sending · ${data.late} late readings · ${data.unaccepted_or_unknown} rejected/unknown requests · ${data.query_requests} history HTTP requests. Results are saved as JSON, CSV and an offline HTML page.`;
+ document.querySelector('#errors').textContent=data.query_errors.join('\n');
+ const samples=data.samples.length?data.samples:[{seconds:0,sent:0,accepted:0,completed:0}];
+ const xmax=Math.max(1,...samples.map(row=>row.seconds)); const ymax=Math.max(1,data.planned,data.sent);
+ let markup=`<path d="M55 15V230H1055" fill="none" stroke="#cbd5e1"/>`;
+ for(let step=0;step<=4;step++){let y=230-step*50;markup+=`<line x1="55" y1="${y}" x2="1055" y2="${y}" stroke="#edf1f6"/><text x="45" y="${y+4}" text-anchor="end" fill="#536575" font-size="12">${Math.round(ymax*step/4)}</text>`;}
+ for(const [key,color] of [['sent','#64748b'],['accepted','#2563eb'],['completed','#059669']]){const points=samples.map(row=>`${55+row.seconds/xmax*1000},${230-row[key]/ymax*200}`).join(' ');markup+=`<polyline points="${points}" fill="none" stroke="${color}" stroke-width="3"/>`;}
+ markup+=`<text x="55" y="255" fill="#536575" font-size="12">0s</text><text x="1055" y="255" text-anchor="end" fill="#536575" font-size="12">${xmax.toFixed(0)}s elapsed</text>`;
+ document.querySelector('#chart').innerHTML=markup;
+}
+async function refresh(){try{const data=window.ARCHIVE_DATA||await (await fetch('/data')).json();draw(data);}catch(error){document.querySelector('#phase').textContent='Viewer disconnected';}if(!window.ARCHIVE_DATA)setTimeout(refresh,1000);}
+refresh();
+</script></html>
