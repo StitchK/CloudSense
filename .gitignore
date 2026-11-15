@@ -30,8 +30,17 @@ dist/
 # Reproduction materials are maintained separately.
 /Project Reproduction/
 
+# Local report and presentation materials are not project source.
+/*.docx
+/*.pptx
+/report/
+evaluation/build_report.py
+evaluation/build_group_report.py
+
 evaluation/lab_bundle.zip
 evaluation/lambda_sources.zip
+evaluation/backups/
+evaluation/cloud_evidence.zip
 evaluation/report/
 evaluation/report_assets/
 evaluation/cloud_evidence/
